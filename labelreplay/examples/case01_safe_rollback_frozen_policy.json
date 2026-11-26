@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0",
+  "case_id": "case01_safe_rollback_frozen_policy",
+  "description": "手算实例一：数据标签经已批准概要+白名单+非干扰去除；回滚引用旧版本；窗口 v2 撤销白名单后旧报告仍按冻结的 v1 策略复核（全部虚构符号）",
+  "sources": [
+    {
+      "id": "D1",
+      "label": "L_DOC",
+      "label_kind": "data",
+      "kind": "list",
+      "versions": [
+        {"version": "v1", "symbols": [["a", "a", "a"], ["a", "b", "a"], ["b", "b", "a"], ["a", "b", "b"]]},
+        {"version": "v2", "symbols": [["a", "a", "a"], ["a", "b", "a"], ["b", "b", "a"], ["a", "b", "b"]]}
+      ]
+    },
+    {
+      "id": "D2",
+      "label": "L_REF",
+      "label_kind": "data",
+      "kind": "scalar",
+      "versions": [{"version": "v1", "symbols": ["x", "y", "z"]}]
+    },
+    {
+      "id": "C1",
+      "label": "L_CTL",
+      "label_kind": "control",
+      "kind": "scalar",
+      "versions": [{"version": "v1", "symbols": ["on", "off"]}]
+    }
+  ],
+  "constraints": [
+    {
+      "type": "implies",
+      "if_var": "C1@v1",
+      "if_in": ["on"],
+      "then_var": "D2@v1",
+      "then_in": ["x", "y"]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n1",
+      "op": "len",
+      "approved_summary": true,
+      "declass": ["L_DOC"],
+      "data_inputs": ["D1@v1"]
+    },
+    {
+      "id": "n1",
+      "version": "v2",
+      "op": "len",
+      "approved_summary": true,
+      "declass": ["L_DOC"],
+      "data_inputs": ["D1@v2"]
+    },
+    {
+      "id": "n2",
+      "op": "table_lookup",
+      "params": {
+        "table": [
+          {"in": "x", "out": "T1"},
+          {"in": "y", "out": "T2"},
+          {"in": "z", "out": "T3"}
+        ]
+      },
+      "data_inputs": ["D2@v1"]
+    },
+    {
+      "id": "n3",
+      "op": "hash_prefix",
+      "approved_summary": true,
+      "declass": ["L_REF"],
+      "params": {"prefix": 4},
+      "data_inputs": ["D2@v1"]
+    },
+    {
+      "id": "n4",
+      "op": "mux",
+      "params": {
+        "branches": [
+          {"when": "on", "index": 0},
+          {"when": "off", "index": 1}
+        ]
+      },
+      "data_inputs": ["n2@v1", "n3@v1"],
+      "control_inputs": ["C1@v1"]
+    },
+    {
+      "id": "n5",
+      "op": "pair",
+      "data_inputs": ["n1@v1", "n4@v1"]
+    },
+    {
+      "id": "n6",
+      "op": "pair",
+      "data_inputs": ["n1@v2", "n1@v1"],
+      "comment": "v2 处理同时回滚依赖 v1 输出版本"
+    }
+  ],
+  "policies": [
+    {
+      "window": "w1",
+      "note": "初始冻结策略：len 概要在白名单内",
+      "whitelist": {
+        "n1@v1": ["L_DOC"],
+        "n1@v2": ["L_DOC"]
+      }
+    },
+    {
+      "window": "w2",
+      "note": "版本窗口撤销白名单：v2 的 len 不再被许可；v1 白名单保持冻结",
+      "whitelist": {
+        "n1@v1": ["L_DOC"]
+      }
+    }
+  ],
+  "reports": [
+    {"id": "r1", "node": "n5@v1", "group": "G_AUDIT", "window": "w1",
+     "description": "审计组长度摘要报告（v1 窗口冻结）"},
+    {"id": "r2", "node": "n6@v1", "group": "G_AUDIT", "window": "w2",
+     "description": "含回滚版本的 v2 复核报告（w2 已撤销 n1@v2 白名单）"}
+  ],
+  "observe": [
+    {"id": "o1", "node": "n1@v1", "distinguish_on": ["D1@v1"]}
+  ]
+}

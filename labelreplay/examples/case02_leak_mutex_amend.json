@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0",
+  "case_id": "case02_leak_mutex_amend",
+  "description": "手算实例二：互斥分支各自可达但不能同时出现；控制标签与数据标签规则不同；prove 得泄漏与最短敏感链；amend 求最少损失计划（全部虚构符号）",
+  "sources": [
+    {
+      "id": "D1",
+      "label": "L_REC",
+      "label_kind": "data",
+      "kind": "list",
+      "versions": [{"version": "v1", "symbols": [["p"], ["p", "q"], ["q", "r"], ["p", "q", "r"]]}]
+    },
+    {
+      "id": "D2",
+      "label": "L_REC",
+      "label_kind": "data",
+      "kind": "scalar",
+      "versions": [{"version": "v1", "symbols": ["p", "q", "r"]}]
+    },
+    {
+      "id": "C1",
+      "label": "L_SW",
+      "label_kind": "control",
+      "kind": "scalar",
+      "versions": [{"version": "v1", "symbols": ["A", "B"]}]
+    }
+  ],
+  "constraints": [
+    {
+      "type": "tuple_in",
+      "vars": ["C1@v1", "D2@v1"],
+      "tuples": [
+        ["A", "p"],
+        ["A", "q"],
+        ["B", "r"]
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "gA",
+      "op": "table_lookup",
+      "params": {
+        "table": [
+          {"in": "A", "out": true},
+          {"in": "B", "out": false}
+        ]
+      },
+      "data_inputs": ["C1@v1"],
+      "comment": "分支 A 守卫"
+    },
+    {
+      "id": "gB",
+      "op": "table_lookup",
+      "params": {
+        "table": [
+          {"in": "A", "out": false},
+          {"in": "B", "out": true}
+        ]
+      },
+      "data_inputs": ["C1@v1"],
+      "comment": "分支 B 守卫"
+    },
+    {
+      "id": "n1",
+      "op": "count_distinct",
+      "approved_summary": true,
+      "declass": ["L_REC"],
+      "data_inputs": ["D1@v1", "D2@v1"]
+    },
+    {
+      "id": "n2",
+      "op": "table_lookup",
+      "params": {
+        "table": [
+          {"in": ["p"], "out": "K1"},
+          {"in": ["p", "q"], "out": "K2"},
+          {"in": ["q", "r"], "out": "K3"},
+          {"in": ["p", "q", "r"], "out": "K4"}
+        ]
+      },
+      "data_inputs": ["D1@v1"]
+    },
+    {
+      "id": "nA",
+      "op": "mux",
+      "params": {
+        "branches": [
+          {"when": "A", "index": 0},
+          {"when": "B", "index": 1}
+        ]
+      },
+      "data_inputs": ["n2@v1", "n1@v1"],
+      "control_inputs": ["C1@v1"]
+    },
+    {
+      "id": "n3",
+      "op": "pair",
+      "data_inputs": ["nA@v1", "n1@v1"]
+    },
+    {
+      "id": "n4",
+      "op": "bucket",
+      "approved_summary": true,
+      "declass": ["L_REC"],
+      "params": {"width": 2},
+      "data_inputs": ["D1@v1"]
+    },
+    {
+      "id": "n5",
+      "op": "bucket",
+      "approved_summary": true,
+      "declass": ["L_REC"],
+      "params": {"width": 4},
+      "data_inputs": ["D1@v1"],
+      "comment": "宽度 4：四个文档长度 1..3 全部映射到 B[0,3]，输出对 L_REC 不变"
+    },
+    {
+      "id": "n7",
+      "op": "pair",
+      "data_inputs": ["gA@v1", "gB@v1"],
+      "comment": "互斥演示：(true,false) 与 (false,true) 各自可达，(true,true) 不可达"
+    }
+  ],
+  "policies": [
+    {
+      "window": "w1",
+      "note": "n5 宽分桶输出不变且在白名单可去标签；n4 窄分桶随长度变化，虽在白名单也不能去标签",
+      "whitelist": {
+        "n4@v1": ["L_REC"],
+        "n5@v1": ["L_REC"]
+      }
+    }
+  ],
+  "reports": [
+    {"id": "r1", "node": "n3@v1", "group": "G_AUDIT", "window": "w1",
+     "description": "含 mux 选择与计数的审计报告（预期泄漏 L_REC）"},
+    {"id": "r2", "node": "nA@v1", "group": "G_OPS", "window": "w1",
+     "description": "运维组 mux 报告（携带控制标签 L_SW）"},
+    {"id": "r3", "node": "n5@v1", "group": "G_AUDIT", "window": "w1",
+     "description": "审计组长度桶报告（预期安全）"}
+  ],
+  "observe": [
+    {"id": "o1", "node": "n4@v1", "distinguish_on": ["D1@v1"],
+     "comment": "窄分桶必须仍能区分 D1 的长度档（1/2/2/3 -> B[0,1]/B[2,3]）"}
+  ]
+}

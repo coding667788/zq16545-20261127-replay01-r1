@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0",
+  "case_id": "case03_full_catalog_coverage",
+  "description": "综合夹具：覆盖 concat/eq/hash_prefix 等算子，使 16 个已许可信号与 4 个替换算子全部可实际选用（全部虚构符号）",
+  "sources": [
+    {
+      "id": "D1",
+      "label": "L_A",
+      "label_kind": "data",
+      "kind": "list",
+      "versions": [{"version": "v1", "symbols": [["p"], ["p", "q"], ["q", "r"], ["p", "q", "r"]]}]
+    },
+    {
+      "id": "D2",
+      "label": "L_B",
+      "label_kind": "data",
+      "kind": "scalar",
+      "versions": [{"version": "v1", "symbols": ["u", "v", "w"]}]
+    },
+    {
+      "id": "C1",
+      "label": "L_SW",
+      "label_kind": "control",
+      "kind": "scalar",
+      "versions": [{"version": "v1", "symbols": ["A", "B"]}]
+    }
+  ],
+  "constraints": [
+    {
+      "type": "tuple_in",
+      "vars": ["C1@v1", "D2@v1"],
+      "tuples": [["A", "u"], ["A", "v"], ["B", "w"]]
+    }
+  ],
+  "nodes": [
+    {"id": "nConcat", "op": "concat", "data_inputs": ["D1@v1", "D1@v1"]},
+    {"id": "nEq", "op": "eq", "data_inputs": ["D2@v1", "D2@v1"]},
+    {
+      "id": "nHash",
+      "op": "hash_prefix",
+      "approved_summary": true,
+      "declass": ["L_B"],
+      "params": {"prefix": 3},
+      "data_inputs": ["D2@v1"]
+    },
+    {
+      "id": "nLen",
+      "op": "len",
+      "approved_summary": true,
+      "declass": ["L_A"],
+      "data_inputs": ["D1@v1"]
+    },
+    {
+      "id": "nPair",
+      "op": "pair",
+      "data_inputs": ["nLen@v1", "nHash@v1"]
+    },
+    {
+      "id": "nMux",
+      "op": "mux",
+      "params": {
+        "branches": [
+          {"when": "A", "index": 0},
+          {"when": "B", "index": 1}
+        ]
+      },
+      "data_inputs": ["nLen@v1", "nEq@v1"],
+      "control_inputs": ["C1@v1"]
+    },
+    {
+      "id": "nCount",
+      "op": "count_distinct",
+      "approved_summary": true,
+      "declass": ["L_B"],
+      "data_inputs": ["D2@v1", "D2@v1"]
+    },
+    {
+      "id": "nTable",
+      "op": "table_lookup",
+      "params": {
+        "table": [
+          {"in": "u", "out": "K1"},
+          {"in": "v", "out": "K2"},
+          {"in": "w", "out": "K3"}
+        ]
+      },
+      "data_inputs": ["D2@v1"]
+    }
+  ],
+  "policies": [
+    {
+      "window": "w1",
+      "note": "len 在白名单；hash/count 因随来源变化不实际去标签",
+      "whitelist": {
+        "nLen@v1": ["L_A"],
+        "nHash@v1": ["L_B"],
+        "nCount@v1": ["L_B"]
+      }
+    }
+  ],
+  "reports": [
+    {"id": "r1", "node": "nPair@v1", "group": "G_AUDIT", "window": "w1",
+     "description": "pair 综合报告"},
+    {"id": "r2", "node": "nMux@v1", "group": "G_OPS", "window": "w1",
+     "description": "mux 运维报告（含控制标签）"}
+  ],
+  "observe": [
+    {"id": "o1", "node": "nLen@v1", "distinguish_on": ["D1@v1"],
+     "comment": "长度概要必须保留长度档区分"}
+  ]
+}
